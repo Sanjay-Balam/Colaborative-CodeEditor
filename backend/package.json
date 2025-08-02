@@ -1,0 +1,30 @@
+{
+  "name": "backend",
+  "module": "src/index.ts",
+  "scripts": {
+    "dev": "bun run src/basic-server.ts",
+    "start": "bun run src/basic-server.ts",
+    "build": "bun build src/basic-server.ts --outdir ./dist",
+    "dev:watch": "bun run --watch src/basic-server.ts"
+  },
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@elysiajs/cors": "1.1.0",
+    "@elysiajs/websocket": "0.1.0",
+    "@types/bcryptjs": "^3.0.0",
+    "@types/jsonwebtoken": "^9.0.10",
+    "bcryptjs": "^3.0.2",
+    "elysia": "1.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.17.0",
+    "y-protocols": "^1.0.6",
+    "yjs": "^13.6.27"
+  }
+}
