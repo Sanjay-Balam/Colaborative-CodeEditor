@@ -83,6 +83,57 @@ const invitationSchema = new mongoose.Schema({
 
 const Invitation = mongoose.model('Invitation', invitationSchema);
 
+// Chat Message Schema
+const chatMessageSchema = new mongoose.Schema({
+  documentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Document', required: true },
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  message: { type: String, required: true, maxlength: 1000 },
+  messageType: { type: String, enum: ['text', 'code', 'system'], default: 'text' },
+  codeSnippet: {
+    language: { type: String },
+    code: { type: String }
+  },
+  mentions: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  isEdited: { type: Boolean, default: false },
+  editedAt: { type: Date },
+  createdAt: { type: Date, default: Date.now }
+});
+
+const ChatMessage = mongoose.model('ChatMessage', chatMessageSchema);
+
+// Code Comment Schema
+const codeCommentSchema = new mongoose.Schema({
+  documentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Document', required: true },
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  lineNumber: { type: Number, required: true },
+  comment: { type: String, required: true, maxlength: 500 },
+  isResolved: { type: Boolean, default: false },
+  resolvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  resolvedAt: { type: Date },
+  replies: [{
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    comment: { type: String, maxlength: 500 },
+    createdAt: { type: Date, default: Date.now }
+  }],
+  createdAt: { type: Date, default: Date.now }
+});
+
+const CodeComment = mongoose.model('CodeComment', codeCommentSchema);
+
+// Notification Schema
+const notificationSchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  documentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Document' },
+  type: { type: String, enum: ['mention', 'comment', 'invitation', 'document_update', 'user_joined'], required: true },
+  title: { type: String, required: true },
+  message: { type: String, required: true },
+  data: { type: mongoose.Schema.Types.Mixed },
+  isRead: { type: Boolean, default: false },
+  createdAt: { type: Date, default: Date.now }
+});
+
+const Notification = mongoose.model('Notification', notificationSchema);
+
 // Auth utilities
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
@@ -286,6 +337,19 @@ class CollaborationService {
   private setupMessageHandlers(ws: any, connectionId: string, ydoc: Y.Doc, awareness: awarenessProtocol.Awareness) {
     ws.on('message', async (message: Buffer) => {
       try {
+        // Try to parse as JSON first (for chat and custom messages)
+        let jsonMessage;
+        try {
+          jsonMessage = JSON.parse(message.toString());
+        } catch {
+          // Not JSON, handle as binary Y.js protocol
+        }
+
+        if (jsonMessage) {
+          await this.handleJsonMessage(ws, connectionId, jsonMessage);
+          return;
+        }
+
         const data = new Uint8Array(message);
         
         // Handle sync messages (Y.js protocol)
@@ -324,6 +388,226 @@ class CollaborationService {
           this.broadcastToDocument(connectionId, awarenessUpdate, true);
         } catch (error) {
           console.error('Error encoding awareness update:', error);
+        }
+      }
+    });
+  }
+
+  private async handleJsonMessage(ws: any, connectionId: string, message: any) {
+    const connection = this.connections.get(connectionId);
+    if (!connection) return;
+
+    try {
+      switch (message.type) {
+        case 'chat_message':
+          await this.handleChatMessage(connectionId, message);
+          break;
+        case 'typing_indicator':
+          this.handleTypingIndicator(connectionId, message);
+          break;
+        case 'code_comment':
+          await this.handleCodeComment(connectionId, message);
+          break;
+        case 'user_presence':
+          this.handleUserPresence(connectionId, message);
+          break;
+        case 'notification':
+          await this.handleNotification(connectionId, message);
+          break;
+        default:
+          console.log('Unknown message type:', message.type);
+      }
+    } catch (error) {
+      console.error('Error handling JSON message:', error);
+      ws.send(JSON.stringify({
+        type: 'error',
+        message: 'Failed to process message'
+      }));
+    }
+  }
+
+  private async handleChatMessage(connectionId: string, message: any) {
+    const connection = this.connections.get(connectionId);
+    if (!connection || !connection.userId) return;
+
+    try {
+      // Save chat message to database
+      const chatMessage = new ChatMessage({
+        documentId: new Types.ObjectId(connection.documentId),
+        userId: new Types.ObjectId(connection.userId),
+        message: message.content,
+        messageType: message.messageType || 'text',
+        codeSnippet: message.codeSnippet,
+        mentions: message.mentions ? message.mentions.map((id: string) => new Types.ObjectId(id)) : []
+      });
+
+      await chatMessage.save();
+      await chatMessage.populate('userId', 'name email avatar');
+
+      // Process mentions and create notifications
+      if (message.mentions && message.mentions.length > 0) {
+        await this.createMentionNotifications(connection.documentId, connection.userId, message.mentions, message.content);
+      }
+
+      // Broadcast to all users in the document
+      const broadcastMessage = {
+        type: 'chat_message',
+        id: chatMessage._id,
+        documentId: connection.documentId,
+        user: chatMessage.userId,
+        message: chatMessage.message,
+        messageType: chatMessage.messageType,
+        codeSnippet: chatMessage.codeSnippet,
+        mentions: chatMessage.mentions,
+        createdAt: chatMessage.createdAt
+      };
+
+      this.broadcastJsonToDocument(connectionId, broadcastMessage);
+    } catch (error) {
+      console.error('Error handling chat message:', error);
+    }
+  }
+
+  private handleTypingIndicator(connectionId: string, message: any) {
+    const connection = this.connections.get(connectionId);
+    if (!connection) return;
+
+    // Broadcast typing indicator to other users
+    const broadcastMessage = {
+      type: 'typing_indicator',
+      userId: connection.userId,
+      documentId: connection.documentId,
+      isTyping: message.isTyping,
+      location: message.location // 'chat' or 'code'
+    };
+
+    this.broadcastJsonToDocument(connectionId, broadcastMessage);
+  }
+
+  private async handleCodeComment(connectionId: string, message: any) {
+    const connection = this.connections.get(connectionId);
+    if (!connection || !connection.userId) return;
+
+    try {
+      if (message.action === 'create') {
+        const comment = new CodeComment({
+          documentId: new Types.ObjectId(connection.documentId),
+          userId: new Types.ObjectId(connection.userId),
+          lineNumber: message.lineNumber,
+          comment: message.comment
+        });
+
+        await comment.save();
+        await comment.populate('userId', 'name email avatar');
+
+        const broadcastMessage = {
+          type: 'code_comment',
+          action: 'created',
+          comment: {
+            id: comment._id,
+            documentId: comment.documentId,
+            user: comment.userId,
+            lineNumber: comment.lineNumber,
+            comment: comment.comment,
+            isResolved: comment.isResolved,
+            createdAt: comment.createdAt
+          }
+        };
+
+        this.broadcastJsonToDocument(connectionId, broadcastMessage);
+      }
+      // Handle other comment actions (resolve, reply, etc.)
+    } catch (error) {
+      console.error('Error handling code comment:', error);
+    }
+  }
+
+  private handleUserPresence(connectionId: string, message: any) {
+    const connection = this.connections.get(connectionId);
+    if (!connection) return;
+
+    // Update user presence and broadcast to other users
+    const broadcastMessage = {
+      type: 'user_presence',
+      userId: connection.userId,
+      documentId: connection.documentId,
+      presence: message.presence // { status, cursor, selection, isActive }
+    };
+
+    this.broadcastJsonToDocument(connectionId, broadcastMessage);
+  }
+
+  private async handleNotification(connectionId: string, message: any) {
+    const connection = this.connections.get(connectionId);
+    if (!connection || !connection.userId) return;
+
+    try {
+      if (message.action === 'mark_read') {
+        await Notification.findByIdAndUpdate(message.notificationId, { isRead: true });
+      }
+    } catch (error) {
+      console.error('Error handling notification:', error);
+    }
+  }
+
+  private async createMentionNotifications(documentId: string, senderId: string, mentions: string[], message: string) {
+    try {
+      const notifications = mentions.map(userId => ({
+        userId: new Types.ObjectId(userId),
+        documentId: new Types.ObjectId(documentId),
+        type: 'mention',
+        title: 'You were mentioned',
+        message: `You were mentioned in a chat: ${message.substring(0, 100)}...`,
+        data: { senderId, messagePreview: message.substring(0, 100) }
+      }));
+
+      await Notification.insertMany(notifications);
+
+      // Send real-time notifications to mentioned users
+      mentions.forEach(userId => {
+        this.sendNotificationToUser(userId, {
+          type: 'mention',
+          title: 'You were mentioned',
+          message: `You were mentioned in a chat`,
+          documentId
+        });
+      });
+    } catch (error) {
+      console.error('Error creating mention notifications:', error);
+    }
+  }
+
+  private sendNotificationToUser(userId: string, notification: any) {
+    // Find all connections for this user across all documents
+    this.connections.forEach((connection, connectionId) => {
+      if (connection.userId === userId && connection.ws.readyState === 1) {
+        connection.ws.send(JSON.stringify({
+          type: 'notification',
+          ...notification
+        }));
+      }
+    });
+  }
+
+  private broadcastJsonToDocument(senderConnectionId: string, message: any, includeSender = false) {
+    const connection = this.connections.get(senderConnectionId);
+    if (!connection) return;
+
+    const documentConnections = this.documentConnections.get(connection.documentId);
+    if (!documentConnections) return;
+
+    const messageStr = JSON.stringify(message);
+
+    documentConnections.forEach(connId => {
+      if (includeSender || connId !== senderConnectionId) {
+        const conn = this.connections.get(connId);
+        if (conn && conn.ws.readyState === 1) {
+          try {
+            conn.ws.send(messageStr);
+          } catch (error) {
+            console.error('Error broadcasting JSON message:', error);
+            this.handleDisconnection(connId);
+          }
         }
       }
     });
@@ -901,6 +1185,212 @@ const app = new Elysia()
         console.error('Error accepting invitation:', error);
         set.status = 400;
         return { error: error.message || 'Failed to accept invitation' };
+      }
+    })
+  )
+
+  // Chat routes
+  .group('/api/chat', (app) => app
+    .use(requireAuth)
+    .get('/messages/:documentId', async ({ params, user, query }: { params: any, user: any, query: any }) => {
+      try {
+        // Check if user has access to the document
+        const document = await Document.findById(params.documentId);
+        if (!document) {
+          return { error: 'Document not found' };
+        }
+
+        const isOwner = document.owner.toString() === user._id.toString();
+        const isCollaborator = document.collaborators.some((c: any) => c.toString() === user._id.toString());
+        
+        if (!document.isPublic && !isOwner && !isCollaborator) {
+          return { error: 'Access denied' };
+        }
+
+        const page = parseInt(query.page || '1');
+        const limit = Math.min(parseInt(query.limit || '50'), 100);
+        const skip = (page - 1) * limit;
+
+        const messages = await ChatMessage.find({ documentId: params.documentId })
+          .populate('userId', 'name email avatar')
+          .populate('mentions', 'name email')
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limit);
+
+        return { messages: messages.reverse() };
+      } catch (error) {
+        console.error('Error fetching chat messages:', error);
+        return { error: 'Failed to fetch messages' };
+      }
+    })
+
+    .delete('/messages/:messageId', async ({ params, user, set }: { params: any, user: any, set: any }) => {
+      try {
+        const message = await ChatMessage.findById(params.messageId);
+        if (!message) {
+          set.status = 404;
+          return { error: 'Message not found' };
+        }
+
+        if (message.userId.toString() !== user._id.toString()) {
+          set.status = 403;
+          return { error: 'You can only delete your own messages' };
+        }
+
+        await ChatMessage.findByIdAndDelete(params.messageId);
+        return { message: 'Message deleted successfully' };
+      } catch (error) {
+        console.error('Error deleting chat message:', error);
+        set.status = 500;
+        return { error: 'Failed to delete message' };
+      }
+    })
+  )
+
+  // Comments routes
+  .group('/api/comments', (app) => app
+    .use(requireAuth)
+    .get('/document/:documentId', async ({ params, user }: { params: any, user: any }) => {
+      try {
+        // Check access to document
+        const document = await Document.findById(params.documentId);
+        if (!document) {
+          return { error: 'Document not found' };
+        }
+
+        const isOwner = document.owner.toString() === user._id.toString();
+        const isCollaborator = document.collaborators.some((c: any) => c.toString() === user._id.toString());
+        
+        if (!document.isPublic && !isOwner && !isCollaborator) {
+          return { error: 'Access denied' };
+        }
+
+        const comments = await CodeComment.find({ 
+          documentId: params.documentId,
+          isResolved: false 
+        })
+        .populate('userId', 'name email avatar')
+        .populate('replies.userId', 'name email avatar')
+        .sort({ createdAt: -1 });
+
+        return { comments };
+      } catch (error) {
+        console.error('Error fetching comments:', error);
+        return { error: 'Failed to fetch comments' };
+      }
+    })
+
+    .post('/:commentId/reply', async ({ params, user, body }: { params: any, user: any, body: any }) => {
+      try {
+        const comment = await CodeComment.findById(params.commentId);
+        if (!comment) {
+          return { error: 'Comment not found' };
+        }
+
+        comment.replies.push({
+          userId: new Types.ObjectId(user._id),
+          comment: body.comment,
+          createdAt: new Date()
+        });
+
+        await comment.save();
+        await comment.populate('replies.userId', 'name email avatar');
+
+        return { 
+          reply: comment.replies[comment.replies.length - 1]
+        };
+      } catch (error) {
+        console.error('Error adding reply:', error);
+        return { error: 'Failed to add reply' };
+      }
+    }, {
+      body: t.Object({
+        comment: t.String()
+      })
+    })
+
+    .patch('/:commentId/resolve', async ({ params, user }: { params: any, user: any }) => {
+      try {
+        const comment = await CodeComment.findByIdAndUpdate(
+          params.commentId,
+          {
+            isResolved: true,
+            resolvedBy: user._id,
+            resolvedAt: new Date()
+          },
+          { new: true }
+        );
+
+        if (!comment) {
+          return { error: 'Comment not found' };
+        }
+
+        return { comment };
+      } catch (error) {
+        console.error('Error resolving comment:', error);
+        return { error: 'Failed to resolve comment' };
+      }
+    })
+  )
+
+  // Notifications routes
+  .group('/api/notifications', (app) => app
+    .use(requireAuth)
+    .get('/', async ({ user, query }: { user: any, query: any }) => {
+      try {
+        const page = parseInt(query.page || '1');
+        const limit = Math.min(parseInt(query.limit || '20'), 50);
+        const skip = (page - 1) * limit;
+
+        const notifications = await Notification.find({ userId: user._id })
+          .populate('documentId', 'title')
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limit);
+
+        const unreadCount = await Notification.countDocuments({ 
+          userId: user._id, 
+          isRead: false 
+        });
+
+        return { notifications, unreadCount };
+      } catch (error) {
+        console.error('Error fetching notifications:', error);
+        return { error: 'Failed to fetch notifications' };
+      }
+    })
+
+    .patch('/:notificationId/read', async ({ params, user }: { params: any, user: any }) => {
+      try {
+        const notification = await Notification.findOneAndUpdate(
+          { _id: params.notificationId, userId: user._id },
+          { isRead: true },
+          { new: true }
+        );
+
+        if (!notification) {
+          return { error: 'Notification not found' };
+        }
+
+        return { notification };
+      } catch (error) {
+        console.error('Error marking notification as read:', error);
+        return { error: 'Failed to update notification' };
+      }
+    })
+
+    .patch('/mark-all-read', async ({ user }: { user: any }) => {
+      try {
+        await Notification.updateMany(
+          { userId: user._id, isRead: false },
+          { isRead: true }
+        );
+
+        return { message: 'All notifications marked as read' };
+      } catch (error) {
+        console.error('Error marking all notifications as read:', error);
+        return { error: 'Failed to update notifications' };
       }
     })
   )
