@@ -187,11 +187,51 @@ const app = new Elysia()
     try {
       const { documentId, recipientEmail } = body as any
       
+      console.log('📧 Creating invitation:', { documentId, recipientEmail })
+      
+      // Validate input
+      if (!recipientEmail) {
+        return { error: 'Recipient email is required' }
+      }
+      
       // Generate unique invite token
       const inviteToken = Math.random().toString(36).substr(2, 12) + Date.now().toString(36)
       
+      // Create or find document
+      let docId
+      if (!documentId || typeof documentId === 'string' && documentId.startsWith('demo-')) {
+        // Create a demo document for this invitation
+        const demoDoc = new Document({
+          title: 'Collaborative Document',
+          content: '// Welcome to collaborative coding!\n// Your friend has invited you to code together.\n\nconsole.log("Hello, collaborative world!");',
+          language: 'javascript',
+          owner: new mongoose.Types.ObjectId(),
+          isPublic: true
+        })
+        await demoDoc.save()
+        docId = demoDoc._id
+        console.log('📄 Created demo document:', docId)
+      } else {
+        // Try to convert string to ObjectId or create new one
+        try {
+          docId = new mongoose.Types.ObjectId(documentId)
+        } catch (e) {
+          // If invalid ObjectId, create a new demo document
+          const demoDoc = new Document({
+            title: 'Collaborative Document',
+            content: '// Welcome to collaborative coding!\n// Your friend has invited you to code together.\n\nconsole.log("Hello, collaborative world!");',
+            language: 'javascript',
+            owner: new mongoose.Types.ObjectId(),
+            isPublic: true
+          })
+          await demoDoc.save()
+          docId = demoDoc._id
+          console.log('📄 Created demo document for invalid ID:', docId)
+        }
+      }
+      
       const invitation = new Invitation({
-        documentId: documentId || new mongoose.Types.ObjectId(),
+        documentId: docId,
         senderId: new mongoose.Types.ObjectId(), // Demo sender
         recipientEmail,
         inviteToken,
@@ -199,11 +239,9 @@ const app = new Elysia()
         permissions: 'write'
       })
       
+      console.log('💾 Saving invitation...')
       await invitation.save()
-      await invitation.populate([
-        { path: 'documentId', select: 'title language' },
-        { path: 'senderId', select: 'name email' }
-      ])
+      console.log('✅ Invitation saved successfully')
       
       const inviteLink = `${process.env.FRONTEND_URL || 'http://localhost:8003'}/invite/${inviteToken}`
       
@@ -214,13 +252,14 @@ const app = new Elysia()
           inviteToken,
           inviteLink,
           recipientEmail,
-          document: invitation.documentId,
-          sender: invitation.senderId
-        }
+          documentId: docId
+        },
+        message: 'Invitation sent successfully!'
       }
     } catch (error) {
       console.error('❌ Error sending invitation:', error)
-      return { error: 'Failed to send invitation' }
+      console.error('❌ Full error details:', error.message, error.stack)
+      return { error: `Failed to send invitation: ${error.message}` }
     }
   })
 
