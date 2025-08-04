@@ -25,7 +25,8 @@ export default function NotificationBell() {
     setIsLoading(true);
     try {
       // In a real app, this would call your API with authentication
-      const response = await fetch('/api/invitations/pending', {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8002';
+      const response = await fetch(`${apiUrl}/api/invitations/pending`, {
         headers: {
           // Add authorization header here
         }
@@ -54,7 +55,8 @@ export default function NotificationBell() {
 
   const handleAcceptInvitation = async (inviteToken: string) => {
     try {
-      const response = await fetch(`/api/invitations/accept/${inviteToken}`, {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8002';
+      const response = await fetch(`${apiUrl}/api/invitations/accept/${inviteToken}`, {
         method: 'POST',
         headers: {
           // Add authorization header here
@@ -77,7 +79,8 @@ export default function NotificationBell() {
 
   const handleDeclineInvitation = async (inviteToken: string) => {
     try {
-      const response = await fetch(`/api/invitations/decline/${inviteToken}`, {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8002';
+      const response = await fetch(`${apiUrl}/api/invitations/decline/${inviteToken}`, {
         method: 'POST'
       });
 

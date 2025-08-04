@@ -34,7 +34,8 @@ export default function InvitePage() {
 
   const fetchInvitationDetails = async () => {
     try {
-      const response = await fetch(`/api/invitations/details/${token}`);
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8002';
+      const response = await fetch(`${apiUrl}/api/invitations/details/${token}`);
       
       if (!response.ok) {
         const errorData = await response.json();
@@ -55,7 +56,8 @@ export default function InvitePage() {
     setError('');
 
     try {
-      const response = await fetch(`/api/invitations/accept/${token}`, {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8002';
+      const response = await fetch(`${apiUrl}/api/invitations/accept/${token}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -85,7 +87,8 @@ export default function InvitePage() {
 
   const handleDeclineInvitation = async () => {
     try {
-      const response = await fetch(`/api/invitations/decline/${token}`, {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8002';
+      const response = await fetch(`${apiUrl}/api/invitations/decline/${token}`, {
         method: 'POST'
       });
 

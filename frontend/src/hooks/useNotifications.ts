@@ -27,7 +27,7 @@ export function useNotifications(userId: string) {
     setIsLoading(true);
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await fetch('/api/notifications', {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/notifications`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -48,7 +48,7 @@ export function useNotifications(userId: string) {
   const markAsRead = useCallback(async (notificationId: string) => {
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await fetch(`/api/notifications/${notificationId}/read`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/notifications/${notificationId}/read`, {
         method: 'PATCH',
         headers: {
           'Authorization': `Bearer ${token}`
@@ -73,7 +73,7 @@ export function useNotifications(userId: string) {
   const markAllAsRead = useCallback(async () => {
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await fetch('/api/notifications/mark-all-read', {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/notifications/mark-all-read`, {
         method: 'PATCH',
         headers: {
           'Authorization': `Bearer ${token}`
@@ -120,7 +120,7 @@ export function useNotifications(userId: string) {
 
   // Listen for real-time notifications via WebSocket
   useEffect(() => {
-    const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001/collaborate';
+    const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8002/collaborate';
     const ws = new WebSocket(`${wsUrl}?userId=${userId}`);
     
     ws.onmessage = (event) => {

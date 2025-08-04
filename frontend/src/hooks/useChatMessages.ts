@@ -48,7 +48,7 @@ export function useChatMessages(documentId: string, userId: string) {
   const loadMessages = useCallback(async () => {
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await fetch(`/api/chat/messages/${documentId}`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/chat/messages/${documentId}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -65,7 +65,7 @@ export function useChatMessages(documentId: string, userId: string) {
 
   // WebSocket connection
   useEffect(() => {
-    const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001/collaborate';
+    const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8002/collaborate';
     const ws = new WebSocket(`${wsUrl}?documentId=${documentId}&userId=${userId}`);
     
     ws.onopen = () => {
@@ -187,7 +187,7 @@ export function useChatMessages(documentId: string, userId: string) {
   const deleteMessage = useCallback(async (messageId: string) => {
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await fetch(`/api/chat/messages/${messageId}`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/chat/messages/${messageId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`

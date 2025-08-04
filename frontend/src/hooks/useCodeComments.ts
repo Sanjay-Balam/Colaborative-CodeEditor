@@ -39,7 +39,7 @@ export function useCodeComments(documentId: string, userId: string) {
   const loadComments = useCallback(async () => {
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await fetch(`/api/comments/document/${documentId}`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/comments/document/${documentId}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -56,7 +56,7 @@ export function useCodeComments(documentId: string, userId: string) {
 
   // WebSocket connection for real-time updates
   useEffect(() => {
-    const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001/collaborate';
+    const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8002/collaborate';
     const ws = new WebSocket(`${wsUrl}?documentId=${documentId}&userId=${userId}`);
     
     ws.onopen = () => {
@@ -139,7 +139,7 @@ export function useCodeComments(documentId: string, userId: string) {
   const addReply = useCallback(async (commentId: string, replyText: string) => {
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await fetch(`/api/comments/${commentId}/reply`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/comments/${commentId}/reply`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -176,7 +176,7 @@ export function useCodeComments(documentId: string, userId: string) {
   const resolveComment = useCallback(async (commentId: string) => {
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await fetch(`/api/comments/${commentId}/resolve`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/comments/${commentId}/resolve`, {
         method: 'PATCH',
         headers: {
           'Authorization': `Bearer ${token}`

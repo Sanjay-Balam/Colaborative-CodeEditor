@@ -8,6 +8,7 @@ import UserPresence from '../presence/UserPresence';
 import FloatingCursors from '../presence/FloatingCursors';
 import NotificationPanel from '../notifications/NotificationPanel';
 import CodeComments from '../comments/CodeComments';
+import InviteModal from './InviteModal';
 import { useCollaboration } from '@/hooks/useCollaboration';
 import { editor } from 'monaco-editor';
 
@@ -36,6 +37,7 @@ export default function CollaborativeEditor({
   const [selectedLine, setSelectedLine] = useState<number | undefined>();
   const [collaborators, setCollaborators] = useState<any[]>([]);
   const [cursors, setCursors] = useState<any[]>([]);
+  const [showInviteModal, setShowInviteModal] = useState(false);
   
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const awareness = useRef<any>(null);
@@ -119,8 +121,7 @@ export default function CollaborativeEditor({
   };
 
   const handleShareDocument = () => {
-    // Placeholder for sharing functionality
-    console.log('Sharing document...');
+    setShowInviteModal(true);
   };
 
   return (
@@ -272,6 +273,14 @@ export default function CollaborativeEditor({
         userId={userId}
         isVisible={activePanel === 'notifications'}
         onToggle={() => togglePanel('notifications')}
+      />
+
+      {/* Invite Modal */}
+      <InviteModal
+        isOpen={showInviteModal}
+        onClose={() => setShowInviteModal(false)}
+        documentId={documentId}
+        documentTitle="Collaborative Document"
       />
     </div>
   );

@@ -28,7 +28,8 @@ export default function InviteModal({ isOpen, onClose, documentId, documentTitle
 
     try {
       // In a real app, this would call your API
-      const response = await fetch('/api/invitations/send', {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8002';
+      const response = await fetch(`${apiUrl}/api/invitations/send`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

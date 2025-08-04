@@ -42,7 +42,7 @@ export default function MonacoEditor({
     const collaborationManager = new CollaborationManager(documentId, userId);
     collaborationRef.current = collaborationManager;
 
-    const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001/collaborate';
+    const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8002/collaborate';
     
     try {
       const { provider, awareness } = collaborationManager.connect(editor, wsUrl);
