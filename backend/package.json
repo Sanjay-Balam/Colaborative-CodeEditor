@@ -2,10 +2,10 @@
   "name": "backend",
   "module": "src/index.ts",
   "scripts": {
-    "dev": "bun run src/basic-server.ts",
-    "start": "bun run src/basic-server.ts",
-    "build": "bun build src/basic-server.ts --outdir ./dist",
-    "dev:watch": "bun run --watch src/basic-server.ts"
+    "dev": "bun run index.ts",
+    "start": "bun run index.ts",
+    "build": "bun build index.ts --outdir ./dist",
+    "dev:watch": "bun run --watch index.ts"
   },
   "type": "module",
   "private": true,
